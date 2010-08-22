@@ -47,6 +47,7 @@ import static com.almworks.sqlite4java.SQLiteConstants.*;
  * it first tries to dispose all prepared statements. If there's an active transaction, it is rolled
  * back.
  *
+ * @author Igor Sereda
  * @see SQLiteStatement
  * @see <a href="http://www.sqlite.org/c3ref/sqlite3.html">sqlite3*</a>
  */
@@ -158,6 +159,18 @@ public final class SQLiteConnection {
   private int myLongArrayCounter;
 
   /**
+   * Flags used to open this connection
+   * Protected by myLock
+   */
+  private int myOpenFlags;
+
+  /**
+   * If true, serialized mode will be used (reconfine to different threads possible)
+   * Protected by myLock
+   */
+  private volatile boolean mySerializedMode = true;
+
+  /**
    * Creates a connection to the database located in the specified file.
    * Database is not opened by the constructor, and the calling thread is insignificant.
    *
@@ -209,14 +222,21 @@ public final class SQLiteConnection {
    * @see <a href="http://www.sqlite.org/c3ref/progress_handler.html">sqlite3_progress_callback</a>
    */
   public void setStepsPerCallback(int stepsPerCallback) {
-    try {
-      checkThread();
-      if (stepsPerCallback > 0) {
-        myStepsPerCallback = stepsPerCallback;
-      }
-    } catch (SQLiteException e) {
-      Internal.logWarn(this, "call to setStepsPerCallback is ignored");
+    if (stepsPerCallback > 0) {
+      myStepsPerCallback = stepsPerCallback;
     }
+  }
+
+  public SQLiteConnection setSerializedMode(boolean mode) throws SQLiteException {
+    synchronized (myLock) {
+      if (myDisposed)
+        throw new SQLiteException(WRAPPER_MISUSE, "connection is disposed");
+      SWIGTYPE_p_sqlite3 handle = myHandle;
+      if (handle != null)
+        throw new SQLiteException(WRAPPER_MISUSE, "database is already opened");
+      mySerializedMode = mode;
+    }
+    return this;
   }
 
   /**
@@ -246,7 +266,7 @@ public final class SQLiteConnection {
     } else {
       flags |= SQLITE_OPEN_CREATE;
     }
-    open0(flags);
+    open0(flags | modeFlags());
     return this;
   }
 
@@ -271,7 +291,7 @@ public final class SQLiteConnection {
     if (isMemoryDatabase()) {
       throw new SQLiteException(WRAPPER_WEIRD, "cannot open memory database in read-only mode");
     }
-    open0(SQLITE_OPEN_READONLY);
+    open0(SQLITE_OPEN_READONLY | modeFlags());
     return this;
   }
 
@@ -318,14 +338,24 @@ public final class SQLiteConnection {
   }
 
   /**
+   * Returns the flags that were used to open this connection.
+   *
+   * @return Flags that were used to open the connection.
+   */
+  public int getOpenFlags() {
+    synchronized (myLock) {
+      return myOpenFlags;
+    }
+  }
+
+  /**
    * Closes this connection and disposes all related resources. After dispose() is called, the connection
    * cannot be used and the instance should be forgotten.
    * <p/>
    * Calling this method on an already disposed connection does nothing.
    * <p/>
-   * This method is <strong>partially thread-safe</strong>: it may be called from another thread,
-   * but in that case prepared statements will not be disposed and will be "lost" by the wrapper.
-   * This will probably be ok, but SQLite may return an error and not close the connection.
+   * If called from a different thread rather from the thread where the connection was opened, this method
+   * does nothing. (It used to attempt connection disposal anyway, but that could lead to JVM crash.)
    * <p/>
    * It is better to call dispose() from a different thread, than not to call it at all.
    * <p/>
@@ -339,9 +369,15 @@ public final class SQLiteConnection {
     synchronized (myLock) {
       if (myDisposed)
         return;
+      Thread confinement = myConfinement;
+      if (confinement != null && confinement != Thread.currentThread()) {
+        Internal.recoverableError(this, "will not dispose from a non-confining thread", true);
+        return;
+      }
       myDisposed = true;
       handle = myHandle;
       myHandle = null;
+      myOpenFlags = 0;
     }
     if (handle == null)
       return;
@@ -824,6 +860,55 @@ public final class SQLiteConnection {
     return createArray(null, true);
   }
 
+  // the following methods are an attempt to make possible to re-confine the connection to a different thread
+  // however, due to possible crash issues (see http://code.google.com/p/sqlite4java/issues/detail?id=18),
+  // and questionable value, these methods are now postponed
+/*
+  public void detachThread() throws SQLiteException {
+    // synchronized is needed to establish before-after relationship with attachThread()
+    synchronized (myLock) {
+      Thread confinement = myConfinement;
+      if (confinement == null) return;
+      if (confinement != Thread.currentThread()) {
+        if (myHandle != null && !myDisposed) {
+          Internal.recoverableError(this, Thread.currentThread() + " is not the confining thread", true);
+        }
+      }
+      if (!isAttachThreadAllowed())
+        throw new SQLiteException(WRAPPER_MISUSE, "not safe to use a single connection from different threads");
+      myConfinement = null;
+    }
+  }
+
+  public void attachThread() throws SQLiteException {
+    // synchronized is needed to establish before-after relationship with detachThread()
+    synchronized (myLock) {
+      Thread confinement = myConfinement;
+      Thread thread = Thread.currentThread();
+      if (confinement == thread) return;
+      if (confinement != null) {
+        Internal.recoverableError(this, "attaching to an already attached connection", true);
+      }
+      if (!isAttachThreadAllowed())
+        throw new SQLiteException(WRAPPER_MISUSE, "not safe to use a single connection from different threads");
+      myConfinement = confinement;
+    }
+  }
+
+  public boolean isAttachThreadAllowed() {
+    try {
+      if (!SQLite.isThreadSafe()) return false;
+      synchronized (myLock) {
+        if (myHandle == null || myDisposed) return true;
+        return (myOpenFlags & SQLiteConstants.SQLITE_OPEN_NOMUTEX) == 0;
+      }
+    } catch (SQLiteException e) {
+      Internal.recoverableError(this, "isThreadSafe failed: " + e, false);
+      return false;
+    }
+  }
+
+*/
   private SQLiteLongArray createArray0(String name, SQLiteController controller) throws SQLiteException {
     SWIGTYPE_p_sqlite3 handle = handle();
     if (name == null)
@@ -839,6 +924,20 @@ public final class SQLiteConnection {
 
   private String nextArrayName() {
     return String.format("__IA%02X", ++myLongArrayCounter);
+  }
+
+  private int modeFlags() {
+    int flags = 0;
+    try {
+      if (SQLite.isThreadSafe()) {
+        synchronized (myLock) {
+          flags |= mySerializedMode ? SQLITE_OPEN_FULLMUTEX : SQLITE_OPEN_NOMUTEX;
+        }
+      }
+    } catch (SQLiteException e) {
+      Internal.logWarn(this, e);
+    }
+    return flags;
   }
 
   private void finalizeProgressHandler(SWIGTYPE_p_sqlite3 handle) {
@@ -1193,11 +1292,12 @@ public final class SQLiteConnection {
     if (handle == null) {
       throw new SQLiteException(WRAPPER_WEIRD, "sqlite didn't return db handle");
     }
+    configureConnection(handle);
     synchronized (myLock) {
       myHandle = handle;
+      myOpenFlags = flags;
     }
     Internal.logInfo(this, "opened");
-    configureConnection(handle);
   }
 
   private void configureConnection(SWIGTYPE_p_sqlite3 handle) {
@@ -1219,11 +1319,12 @@ public final class SQLiteConnection {
 
   void checkThread() throws SQLiteException {
     Thread confinement = myConfinement;
-    if (confinement == null)
-      return;
+    if (confinement == null) {
+      throw new SQLiteException(WRAPPER_CONFINEMENT_VIOLATED, this + " is not confined");
+    }
     Thread thread = Thread.currentThread();
     if (thread != confinement) {
-      String message = this + " confined(" + confinement + ") used(" + thread + ")";
+      String message = this + " confined(" + confinement + ") used (" + thread + ")";
       throw new SQLiteException(WRAPPER_CONFINEMENT_VIOLATED, message);
     }
   }
@@ -1238,11 +1339,13 @@ public final class SQLiteConnection {
     boolean disposed = myDisposed;
     if (handle != null || !disposed) {
       Internal.recoverableError(this, "wasn't disposed before finalizing", true);
+/*
       try {
         dispose();
       } catch (Throwable e) {
         // ignore
       }
+*/
     }
   }
 
