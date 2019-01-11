@@ -261,4 +261,12 @@ final class _SQLiteManual {
     myString[0] = null;
     return r;
   }
+
+  public static int sqlite3_db_unlock_notify(SWIGTYPE_p_sqlite3 db, _SQLiteUnlockNotification un) {
+    return _SQLiteManualJNI.sqlite3_db_unlock_notify(SWIGTYPE_p_sqlite3.getCPtr(db), un);
+  }
+
+  public static int sqlite3_statement_unlock_notify(SWIGTYPE_p_sqlite3_stmt stmt, _SQLiteUnlockNotification un) {
+    return _SQLiteManualJNI.sqlite3_statement_unlock_notify(SWIGTYPE_p_sqlite3_stmt.getCPtr(stmt), un);
+  }
 }

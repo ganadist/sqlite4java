@@ -24,6 +24,7 @@ import java.util.*;
 import java.util.logging.Level;
 
 import static com.almworks.sqlite4java.SQLiteConstants.*;
+import static com.almworks.sqlite4java._SQLiteUnlockNotification.*;
 
 /**
  * SQLiteConnection is a single connection to sqlite database. It wraps the <strong><code>sqlite3*</code></strong>
@@ -167,6 +168,16 @@ public final class SQLiteConnection {
    * Protected by myLock
    */
   private int myOpenFlags;
+  
+  /**
+   * Flag indicating whether to use blocking prepare() or step() (using the
+   * sqlite3_notify_unlock feature).  If isBlocking is true at the time of a
+   * prepare() call, then the SQLiteStatement object returned will have its
+   * isBlocking flag set true as well, enabling the blocking step().
+   *
+   * Protected by myLock
+   */
+  private boolean isBlocking;
 
   /**
    * Creates a connection to the database located in the specified file.
@@ -566,7 +577,8 @@ public final class SQLiteConnection {
    * <p/>
    * Returned statement must be disposed when the calling code is done with it, whether it was cached or not.
    * <p/>
-   *
+   * If blocking mode is enabled, this method will attempt to block while a lock is held (but is not guaranteed to do so).  If blocking mode is enabled, this method will return a blocking-enabled {@link SQLiteStatement} which will use a blocking {@link SQLiteStatement#step()}.  Please see {@link #isBlocking()} for full documentation on blocking mode.
+   * 
    * @param sql    the SQL statement, not null
    * @param cached if true, the statement handle will be cached by the connection
    * @param flags A bit array which consists of 0 or more
@@ -587,7 +599,9 @@ public final class SQLiteConnection {
     SWIGTYPE_p_sqlite3_stmt stmt = null;
     SQLParts fixedKey = null;
     int openCounter;
+    boolean blockingMode;
     synchronized (myLock) {
+      blockingMode = isBlocking;
       if (cached) {
         // while the statement is in work, it is removed from cache. it is put back in cache by SQLiteStatement.dispose().
         FastMap.Entry<SQLParts, SWIGTYPE_p_sqlite3_stmt> e = myStatementCache.getEntry(sql);
@@ -612,6 +626,17 @@ public final class SQLiteConnection {
         throw new SQLiteException(WRAPPER_USER_ERROR, "empty SQL");
       stmt = mySQLiteManual.sqlite3_prepare_v3(handle, sqlString, flags);
       int rc = mySQLiteManual.getLastReturnCode();
+      if(blockingMode && (rc == SQLITE_LOCKED || rc == SQLITE_LOCKED_SHAREDCACHE)) {
+        _SQLiteUnlockNotification un = new _SQLiteDatabaseUnlockNotification(handle);
+        do {
+          // prepare indicated a locked state, so attempt to block and wait
+          // for notification of an unlock
+          rc = un.wait_for_unlock_notify();
+          if(rc != SQLITE_OK) break;
+          stmt = mySQLiteManual.sqlite3_prepare_v2(handle, sqlString);
+          rc = mySQLiteManual.getLastReturnCode();
+        } while(rc == SQLITE_LOCKED || rc == SQLITE_LOCKED_SHAREDCACHE);
+      }
       if (profiler != null) profiler.reportPrepare(sqlString, from, System.nanoTime(), rc);
       throwResult(rc, "prepare()", sql);
       if (stmt == null)
@@ -629,6 +654,7 @@ public final class SQLiteConnection {
         if (fixedKey == null)
           fixedKey = sql.getFixedParts();
         statement = new SQLiteStatement(controller, stmt, fixedKey, myProfiler);
+        statement.setBlocking(isBlocking);
         myStatements.add(statement);
       } else {
         Internal.logWarn(this, "connection disposed while preparing statement for [" + sql + "]");
@@ -1759,6 +1785,67 @@ public final class SQLiteConnection {
     buf.append(what);
     for (int i = what.length(); i < width; i++)
       buf.append(filler);
+  }
+
+  /**
+   * Indicates whether {@link #prepare(SQLParts,boolean)} attempts to block
+   * when a lock is held.  If it can, {@link #prepare(SQLParts,boolean)}
+   * will block until the lock is released.  It is still possible for {@link
+   * #prepare(SQLParts,boolean)} to throw a {@link
+   * SQLiteConstants#SQLITE_LOCKED} or {@link
+   * SQLiteConstants#SQLITE_LOCKED_SHAREDCACHE} exception even in blocking
+   * mode when sqlite detects a deadlock may occur, in which case the
+   * current transaction should be rolled back by the caller.  This is
+   * documented by the <a
+   * href="http://www.sqlite.org/unlock_notify.html">Unlock Notify</a> page
+   * in the SQLite documentation.
+   *
+   * <p/>
+   *
+   * Blocking may only be enabled in shared cache mode, which is indicated
+   * with a {@link SQLiteConstants#SQLITE_OPEN_SHAREDCACHE} flag when {@link
+   * #openV2(int)} is called.
+   * 
+   * <p/>
+   *
+   * If blocking is enabled at the time of a {@link
+   * #prepare(SQLParts,boolean)} call, then the {@link SQLiteStatement}
+   * object returned will have its blocking flag set true as well, enabling
+   * the blocking {@link SQLiteStatement#step()}.
+   *
+   * @return true if {@link #prepare(SQLParts,boolean)} will try to block
+   * when in a locked state and shared cache mode is enabled.  {@link
+   * #prepare(SQLParts,boolean)} will also return a {@link SQLiteStatement}
+   * with its blocking mode enabled for blocking {@link
+   * SQLiteStatement#step()}.
+   *
+   * @see <a href="http://www.sqlite.org/unlock_notify.html">SQLite Unlock Notify API</a>
+   */
+  public boolean isBlocking()
+  {
+    synchronized(myLock) {
+      return isBlocking;
+    }
+  }
+  
+  /**
+   * Set the blocking flag.
+   *
+   * @param isBlocking A boolean that indicates if {@link
+   * #prepare(SQLParts,boolean)} will try to block when in a locked state
+   * and shared cache mode is enabled.
+   *
+   * @see #isBlocking()
+   */
+  public void setBlocking(boolean isBlocking)
+    throws SQLiteException
+  {
+    // blocking can only be enabled in shared cache mode
+    synchronized(myLock) {
+      if(isBlocking && (myOpenFlags | SQLITE_OPEN_SHAREDCACHE) == 0)
+        throw new SQLiteException(SQLiteConstants.WRAPPER_MISUSE, "Blocking can only be enabled in shared cache mode.  Shared cache mode is enabled with a flag passed to openV2().");
+      this.isBlocking = isBlocking;
+    }
   }
 
 

@@ -25,6 +25,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import static com.almworks.sqlite4java.SQLiteConstants.*;
+import static com.almworks.sqlite4java._SQLiteUnlockNotification.*;
 
 /**
  * SQLiteStatement wraps an instance of compiled SQL statement, represented as <strong><code>sqlite3_stmt*</code></strong>
@@ -117,6 +118,14 @@ public final class SQLiteStatement {
    * True if statement has been cancelled. Cleared at statement reset.
    */
   private boolean myCancelled;
+
+  /**
+   * Flag indicating whether to use blocking step() (using the
+   * sqlite3_notify_unlock feature).
+   *
+   * Protected by myLock
+   */
+  private boolean isBlocking;
 
   /**
    * Instances are constructed only by SQLiteConnection.
@@ -270,6 +279,8 @@ public final class SQLiteStatement {
    * Note that since SQlite 3.7, {@link #reset} method is called by step() automatically if anything other than
    * SQLITE_ROW is returned.
    * <p/>
+   * If blocking mode is enabled, this method will attempt to block while a lock is held (but is not guaranteed to do so).  Please see {@link SQLiteConnection#isBlocking()} for full documentation on blocking mode.
+   * <p/>
    * This method can produce one of the three results:
    * <ul>
    * <li>If the return value is <strong>true</strong>, there's data to be read using <code>columnXYZ</code> methods;
@@ -293,6 +304,17 @@ public final class SQLiteStatement {
       SQLiteProfiler profiler = myProfiler;
       long from = profiler == null ? 0 : System.nanoTime();
       rc = _SQLiteSwigged.sqlite3_step(handle);
+      if(isBlocking && (rc == SQLITE_LOCKED || rc == SQLITE_LOCKED_SHAREDCACHE)) {
+        _SQLiteUnlockNotification un = new _SQLiteStatementUnlockNotification(handle);
+        do {
+          // step indicated a locked state, so attempt to block and wait for
+          // notification of an unlock
+          rc = un.wait_for_unlock_notify();
+          if(rc != SQLITE_OK) break;
+          rc = _SQLiteSwigged.sqlite3_step(handle);
+          reset(false);
+        } while(rc == SQLITE_LOCKED || rc == SQLITE_LOCKED_SHAREDCACHE);
+      }      
       if (profiler != null)
         profiler.reportStep(myStepped, mySqlParts.toString(), from, System.nanoTime(), rc);
     } finally {
@@ -1419,6 +1441,37 @@ public final class SQLiteStatement {
 
   SWIGTYPE_p_sqlite3_stmt statementHandle() {
     return myHandle;
+  }
+  
+  /**
+   * Indicates whether {@link #step()} tries to block until a lock is
+   * released.  {@link SQLiteConstants#SQLITE_LOCKED} or {@link
+   * SQLiteConstants#SQLITE_LOCKED_SHAREDCACHE} exception may still be
+   * thrown in certain circumstances.  Refer to {@link
+   * SQLiteConnection#isBlocking()} for full documentation on shared cache
+   * blocking.
+   *
+   * @return true if {@link #step()} will try to block when in a locked
+   * state and shared cache mode is enabled.
+   *
+   * @see SQLiteConnection#isBlocking()
+   */
+  public boolean isBlocking()
+  {
+    return isBlocking;
+  }
+  
+  /**
+   * Sets the blocking flag.
+   *
+   * @param isBlocking A boolean that indicates if {@link #step()} will try
+   * to block when in a locked state and shared cache mode is enabled.
+   *
+   * @see #isBlocking()
+   */
+  public void setBlocking(boolean isBlocking)
+  {
+    this.isBlocking = isBlocking;
   }
 
   private final class BindStream extends OutputStream {
