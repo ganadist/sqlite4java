@@ -401,20 +401,13 @@ public final class SQLiteConnection {
   /**
    * <p>Attempts to flush dirty pages in the pager-cache. Dirty pages may exist
    * during a write-transaction. This method may attempt to acquire extra database
-   * locks before it can flush the dirty pages. This method cannot guarantee the
-   * lock will be acquired, and therefore cannot guarantee the dirty pages will be flushed.</p>
+   * locks before it can flush the dirty pages. On failure, a warning message is logged.</p>
    *
-   * @throws SQLiteException If the call violates the contract of this class.
    * @see <a href="https://www.sqlite.org/c3ref/db_cacheflush.html">sqlite3_db_cacheflush</a>
    */
-  public void safeFlush() throws SQLiteException {
-    checkThread();
-    if (Internal.isFineLogging())
-      Internal.logFine(this, "calling sqlite3_db_cacheflush() via safeFlush()");
-
+  public void safeFlush() {
      try {
-       int result = _SQLiteSwigged.sqlite3_db_cacheflush(handle());
-       throwResult(result, "flush()");
+       flush();
      } catch (SQLiteException e) {
        Internal.logWarn(this, "error during flush() - " + e.getMessage());
      }

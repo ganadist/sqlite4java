@@ -64,6 +64,14 @@ public class MiscTests extends SQLiteTestFixture {
       SQLite.setDirectory(SQLiteConstants.SQLITE_WIN32_DATA_DIRECTORY_TYPE, null);
       SQLite.setDirectory(SQLiteConstants.SQLITE_WIN32_TEMP_DIRECTORY_TYPE, "test2");
       SQLite.setDirectory(SQLiteConstants.SQLITE_WIN32_TEMP_DIRECTORY_TYPE, null);
+    } else {
+      try {
+        SQLite.setDirectory(SQLiteConstants.SQLITE_WIN32_DATA_DIRECTORY_TYPE, "test1");
+        fail("call to SQLite.setDirectory() should fail on non-Windows operating systems");
+      } catch (AssertionError e) {
+        // norm
+      }
     }
   }
+
 }

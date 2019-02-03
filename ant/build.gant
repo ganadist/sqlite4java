@@ -95,13 +95,13 @@ target(name: 'init') {
     os = "linux"
   }
 
-  def info = "svn info $mod".execute().text
-  def m = info =~ /Revision: (\d+)/
-  if (!m) { ant.echo(message: "WARNING: no version"); }
+  def info = "git tag --points-at HEAD".execute().text
+  def m = info =~ /sqlite4java-(\d+)/
+  if (!m) { ant.echo(message: "WARNING: no version") }
   else {
-    version = m[0][1];
-    def status = "svn status $mod".execute().text
-    if (status =~ /(?m)^[^\?]/) {
+    version = m[0][1]
+    def status = "git diff HEAD".execute().text
+    if (status =~ /(?m).+/) {
       ant.echo(message: "WARNING: dirty build")
       version += "+";
     }
@@ -111,13 +111,6 @@ target(name: 'init') {
   ant.echo(message: "os=${os}")
   ant.echo(message: "arch=${antProp('os.arch')}")
   List files = []
-
-  if (os == "mac") {
-    if (!antProp("sdk.home") && antProp("xcode.home")) {
-      ant.property(name: "sdk.home", value: antProp("xcode.home") + "/SDKs/MacOSX10.5.sdk");
-    }
-    checkProp("sdk.home")
-  }
 
   files << "${os}.properties"
   files << "default.properties"
@@ -130,9 +123,19 @@ target(name: 'init') {
     }
   }
 
+  if (os == "mac") {
+    if (!antProp("sdk.home") && antProp("xcode.home")) {
+      ant.property(name: "sdk.home", value: antProp("xcode.home") + "/SDKs/MacOSX.sdk");
+    }
+    checkProp("sdk.home")
+  }
+
   checkProp("jdk.home", "JAVA_HOME", "JDK_HOME")
   checkProp("swig.home", "SWIG_HOME")
-  if (os == "windows") checkProp("wsdk.home", "WindowsSdkDir")
+  if (os == "windows") { 
+    checkProp("wsdk.home", "WSDK_HOME")
+    checkProp("vs.home", "VS_HOME")
+  }
   if (os == "mac") {
     def compilerProperty = ("gcc --version".execute().text.contains("clang") ? "clang" : "gcc") + ".cc.options"
     compilerArgs = antProp(compilerProperty)
@@ -148,7 +151,7 @@ target(name: 'init') {
 
 final wsdk = {String arg, String out, String arch, String buildtype ->
   ant.delete(file: out)
-  ant.exec(dir: mod, command: "cmd /C echo $arg | cmd /V:ON /D /K ${antProp('msenv')} -arch=$arch ${antProp('msenv.extra')}")
+  ant.exec(dir: mod, command: "cmd /C echo $arg | cmd /V:ON /D /K \"${antProp('msenv')}\" -arch=$arch ${antProp('msenv.extra')}")
   if (!new File(out).isFile()) {
     ant.fail(message: "cannot make $out")
   }
@@ -223,7 +226,8 @@ target(name: 'lib.link') {
       ant.mkdir(dir: out)
       if (os == "windows") {
         def arch = antProp("arch.$platform")
-        wsdk("${antProp('link')} ${antProp('link.args')} /OUT:$out/${libname(platform, buildtype)} $cc/sqlite3.o $cc/sqlite_wrap.o $cc/sqlite3_wrap_manual.o $cc/intarray.o",
+        def largs = antProp("${buildtype}.link.args")
+        wsdk("${antProp('link')} $largs ${antProp('link.args')} /OUT:$out/${libname(platform, buildtype)} $cc/sqlite3.o $cc/sqlite_wrap.o $cc/sqlite3_wrap_manual.o $cc/intarray.o",
             "$out/${libname(platform, buildtype)}", arch, buildtype)
       } else {
         def clargs = antProp("${buildtype}.cc.args") + " " + antProp("cc.args.${platform}") + " " + compilerArgs
