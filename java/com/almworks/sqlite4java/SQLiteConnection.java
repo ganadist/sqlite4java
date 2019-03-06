@@ -1842,7 +1842,7 @@ public final class SQLiteConnection {
   {
     // blocking can only be enabled in shared cache mode
     synchronized(myLock) {
-      if(isBlocking && (myOpenFlags | SQLITE_OPEN_SHAREDCACHE) == 0)
+      if(isBlocking && (myOpenFlags & SQLITE_OPEN_SHAREDCACHE) == 0)
         throw new SQLiteException(SQLiteConstants.WRAPPER_MISUSE, "Blocking can only be enabled in shared cache mode.  Shared cache mode is enabled with a flag passed to openV2().");
       this.isBlocking = isBlocking;
     }

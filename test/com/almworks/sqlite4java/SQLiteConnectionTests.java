@@ -2,8 +2,11 @@ package com.almworks.sqlite4java;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.concurrent.locks.Lock;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+
+import static com.almworks.sqlite4java.SQLiteConstants.*;
 
 public class SQLiteConnectionTests extends SQLiteConnectionFixture {
   public void testOpenFile() throws SQLiteException {
@@ -152,7 +155,7 @@ public class SQLiteConnectionTests extends SQLiteConnectionFixture {
 
   public void testOpenV2() throws SQLiteException {
     SQLiteConnection db = fileDb();
-    db.openV2(SQLiteConstants.SQLITE_OPEN_CREATE | SQLiteConstants.SQLITE_OPEN_READWRITE | SQLiteConstants.SQLITE_OPEN_NOMUTEX);
+    db.openV2(SQLiteConstants.SQLITE_OPEN_CREATE | SQLITE_OPEN_READWRITE | SQLiteConstants.SQLITE_OPEN_NOMUTEX);
     db.exec("create table x(x)");
     db.dispose();
   }
@@ -187,7 +190,7 @@ public class SQLiteConnectionTests extends SQLiteConnectionFixture {
 
       con = new SQLiteConnection(dataBaseFile).openV2(
         readonlyOpen ?
-        SQLiteConstants.SQLITE_OPEN_READONLY : SQLiteConstants.SQLITE_OPEN_READWRITE);
+        SQLiteConstants.SQLITE_OPEN_READONLY : SQLITE_OPEN_READWRITE);
 
       boolean isReadonly = readonlyFile || readonlyOpen;
       assertEquals(isReadonly, con.isReadOnly(null));
@@ -236,6 +239,46 @@ public class SQLiteConnectionTests extends SQLiteConnectionFixture {
     } finally {
       con.exec("commit");
       con.dispose();
+    }
+  }
+
+  public void testBlocking() throws Exception {
+    final File dbFile = new File("test");
+    final SQLiteConnection con1 = new SQLiteConnection(dbFile);
+    final SQLiteConnection con2 = new SQLiteConnection(dbFile);
+    final int[] result = new int[] { 1 };
+    Thread t = new Thread() {
+      @Override
+      public void run() {
+        try {
+          con2.openV2(SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_SHAREDCACHE);
+          con2.setBlocking(true);
+          SQLiteStatement stmt = con2.prepare("select * from x");
+          stmt.step();
+          stmt.dispose();
+          result[0] = 0;
+        } catch (Exception e) {
+          result[0] = -1;
+        }
+      }
+    };
+
+    try {
+      con1.openV2(SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_SHAREDCACHE);
+      con1.setBlocking(true);
+      con1.exec("create table x (x integer)");
+      con1.exec("begin exclusive transaction");
+      t.start();
+      Thread.sleep(100);
+      con1.exec("insert into table x values(42)");
+      con1.exec("commit");
+      assertEquals("testBlocking() failed to reach final state", 0, result[0]);
+    } finally {
+      con1.dispose();
+      con2.dispose();
+      if (!dbFile.delete()) {
+        Internal.logWarn(this, "failed to delete database file 'test'");
+      }
     }
   }
 

@@ -72,12 +72,13 @@ abstract class _SQLiteUnlockNotification
     // the callback
     int rc = manualUnlockNotify();
     assert(rc == SQLiteConstants.SQLITE_LOCKED || rc == SQLiteConstants.SQLITE_LOCKED_SHAREDCACHE || rc == SQLiteConstants.SQLITE_OK);
-    
     if(rc == SQLITE_OK) {
       synchronized(this) {
         if(fired == 0) {
           try {
             // wait for notification from the callback
+            if (Internal.isFineLogging())
+                Internal.logFine(this, "blocking in wait_for_unlock_notify()");
             wait();
           } catch(InterruptedException e) {
             throw new SQLiteException(SQLiteConstants.WRAPPER_WEIRD, "wait() interrupted", e);
