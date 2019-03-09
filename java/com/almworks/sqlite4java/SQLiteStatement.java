@@ -120,12 +120,19 @@ public final class SQLiteStatement {
   private boolean myCancelled;
 
   /**
+   * Flags the associated SQLiteConnection was opened with. This is required to check if isBlocking can be
+   * set for this statement object.
+   */
+  private int myConnOpenFlags;
+
+  /**
    * Flag indicating whether to use blocking step() (using the
    * sqlite3_notify_unlock feature).
    *
    * Protected by myLock
    */
   private boolean isBlocking;
+
 
   /**
    * Instances are constructed only by SQLiteConnection.
@@ -136,13 +143,14 @@ public final class SQLiteStatement {
    * @param profiler   an instance of profiler for the statement, or null
    * @see SQLiteConnection#prepare(String, boolean)
    */
-  SQLiteStatement(SQLiteController controller, SWIGTYPE_p_sqlite3_stmt handle, SQLParts sqlParts, SQLiteProfiler profiler) {
+  SQLiteStatement(SQLiteController controller, SWIGTYPE_p_sqlite3_stmt handle, SQLParts sqlParts, SQLiteProfiler profiler, int connOpenFlags) {
     assert handle != null;
     assert sqlParts.isFixed() : sqlParts;
     myController = controller;
     myHandle = handle;
     mySqlParts = sqlParts;
     myProfiler = profiler;
+    myConnOpenFlags = connOpenFlags;
     Internal.logFine(this, "instantiated");
   }
 
@@ -304,7 +312,7 @@ public final class SQLiteStatement {
       SQLiteProfiler profiler = myProfiler;
       long from = profiler == null ? 0 : System.nanoTime();
       rc = _SQLiteSwigged.sqlite3_step(handle);
-      if(isBlocking && (rc == SQLITE_LOCKED || rc == SQLITE_LOCKED_SHAREDCACHE)) {
+      if (isBlocking && (rc == SQLITE_LOCKED || rc == SQLITE_LOCKED_SHAREDCACHE)) {
         _SQLiteUnlockNotification un = new _SQLiteStatementUnlockNotification(handle);
         do {
           // step indicated a locked state, so attempt to block and wait for
@@ -313,7 +321,7 @@ public final class SQLiteStatement {
           if(rc != SQLITE_OK) break;
           rc = _SQLiteSwigged.sqlite3_step(handle);
           reset(false);
-        } while(rc == SQLITE_LOCKED || rc == SQLITE_LOCKED_SHAREDCACHE);
+        } while (rc == SQLITE_LOCKED || rc == SQLITE_LOCKED_SHAREDCACHE);
       }      
       if (profiler != null)
         profiler.reportStep(myStepped, mySqlParts.toString(), from, System.nanoTime(), rc);
@@ -1456,22 +1464,28 @@ public final class SQLiteStatement {
    *
    * @see SQLiteConnection#isBlocking()
    */
-  public boolean isBlocking()
-  {
-    return isBlocking;
+  public boolean isBlocking() {
+    synchronized (this) {
+      return isBlocking;
+    }
   }
   
   /**
-   * Sets the blocking flag.
+   * Sets the blocking flag. Blocking can only be enabled in shared cache mode.
    *
    * @param isBlocking A boolean that indicates if {@link #step()} will try
    * to block when in a locked state and shared cache mode is enabled.
    *
+   * @throws SQLiteException If shared cache mode is not enabled for for the connection this statement is associated with.
    * @see #isBlocking()
    */
-  public void setBlocking(boolean isBlocking)
-  {
-    this.isBlocking = isBlocking;
+  public void setBlocking(boolean isBlocking) throws SQLiteException {
+    synchronized (this) {
+      if (isBlocking && (myConnOpenFlags & SQLITE_OPEN_SHAREDCACHE) == 0)
+        throw new SQLiteException(SQLiteConstants.WRAPPER_MISUSE,
+                "Blocking can only be enabled in shared cache mode. Shared cache mode is enabled with a flag passed to openV2().");
+      this.isBlocking = isBlocking;
+    }
   }
 
   private final class BindStream extends OutputStream {

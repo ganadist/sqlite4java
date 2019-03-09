@@ -25,16 +25,14 @@ import static com.almworks.sqlite4java.SQLiteConstants.*;
  *
  * @see <a href="http://www.sqlite.org/unlock_notify.html">SQLite Unlock Notification</a>
  */
-abstract class _SQLiteUnlockNotification
-{
+abstract class _SQLiteUnlockNotification {
   /**
    * Indicates whether an unlock notification has occured and the callback
    * has accepted the notification.
    */
   public int fired;
 
-  public _SQLiteUnlockNotification()
-  {
+  public _SQLiteUnlockNotification() {
     this.fired = 0;
   }
 
@@ -46,10 +44,8 @@ abstract class _SQLiteUnlockNotification
    * It gets called when SQLite is ready to indicate when a lock is
    * released.
    */
-  public void callback()
-  {
-    synchronized(this)
-    {
+  public void callback() {
+    synchronized (this) {
       fired = 1;
       this.notify();
     }
@@ -72,9 +68,9 @@ abstract class _SQLiteUnlockNotification
     // the callback
     int rc = manualUnlockNotify();
     assert(rc == SQLiteConstants.SQLITE_LOCKED || rc == SQLiteConstants.SQLITE_LOCKED_SHAREDCACHE || rc == SQLiteConstants.SQLITE_OK);
-    if(rc == SQLITE_OK) {
+    if (rc == SQLITE_OK) {
       synchronized(this) {
-        if(fired == 0) {
+        if (fired == 0) {
           try {
             // wait for notification from the callback
             if (Internal.isFineLogging())

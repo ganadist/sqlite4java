@@ -2,7 +2,6 @@ package com.almworks.sqlite4java;
 
 import java.io.File;
 import java.io.IOException;
-import java.util.concurrent.locks.Lock;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -242,7 +241,7 @@ public class SQLiteConnectionTests extends SQLiteConnectionFixture {
     }
   }
 
-  public void testBlocking() throws Exception {
+  public void testBlockingConnection() throws Exception {
     final File file = new File(tempName("db"));
     final SQLiteConnection con1 = new SQLiteConnection(file);
     final SQLiteConnection con2 = new SQLiteConnection(file);
@@ -258,6 +257,7 @@ public class SQLiteConnectionTests extends SQLiteConnectionFixture {
           stmt.dispose();
           result[0] = 0;
         } catch (Exception e) {
+          e.printStackTrace();
           result[0] = -1;
         } finally {
           con1.dispose();
@@ -267,11 +267,11 @@ public class SQLiteConnectionTests extends SQLiteConnectionFixture {
 
     try {
       con2.openV2(SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_SHAREDCACHE);
-      con2.setBlocking(true);
+      //con2.setBlocking(true);
       con2.exec("create table x (x integer)");
       con2.exec("begin exclusive transaction");
       t.start();
-      Thread.sleep(100);
+      Thread.sleep(50);
       con2.exec("insert into x values(42)");
       con2.exec("commit");
       t.join();
@@ -279,6 +279,58 @@ public class SQLiteConnectionTests extends SQLiteConnectionFixture {
     } finally {
       con2.dispose();
    }
+  }
+
+  public void testBlockingStatement() throws Exception {
+    final File file = new File(tempName("db"));
+    final SQLiteConnection con1 = new SQLiteConnection(file);
+    final SQLiteConnection con2 = new SQLiteConnection(file);
+    final int[] flags = new int[] { 0, 1 };
+    Thread t = new Thread() {
+      @Override
+      public void run() {
+        try {
+          con1.openV2(SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_SHAREDCACHE);
+          SQLiteStatement stmt = con1.prepare("select * from x");
+          stmt.setBlocking(true);
+          flags[0] = 1;
+          synchronized (con2) {
+            con2.notify();
+          }
+          stmt.step();
+          stmt.dispose();
+          flags[1] = 0;
+        } catch (Exception e) {
+          e.printStackTrace();
+          flags[1] = -1;
+        } finally {
+          con1.dispose();
+        }
+      }
+    };
+
+    try {
+      con2.openV2(SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_SHAREDCACHE);
+      con2.exec("create table x (x integer)");
+      t.start();
+      synchronized (con2) {
+        while (flags[0] == 0) {
+          try {
+            con2.wait();
+          } catch (InterruptedException e) {
+            //normal
+          }
+        }
+      }
+      con2.exec("begin exclusive transaction");
+      Thread.sleep(50);
+      con2.exec("insert into x values(42)");
+      con2.exec("commit");
+      t.join();
+      assertEquals("testBlocking() failed to reach final state", 0, flags[1]);
+    } finally {
+      con2.dispose();
+    }
   }
 
 }

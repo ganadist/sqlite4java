@@ -626,7 +626,7 @@ public final class SQLiteConnection {
         throw new SQLiteException(WRAPPER_USER_ERROR, "empty SQL");
       stmt = mySQLiteManual.sqlite3_prepare_v3(handle, sqlString, flags);
       int rc = mySQLiteManual.getLastReturnCode();
-      if(blockingMode && (rc == SQLITE_LOCKED || rc == SQLITE_LOCKED_SHAREDCACHE)) {
+      if (blockingMode && (rc == SQLITE_LOCKED || rc == SQLITE_LOCKED_SHAREDCACHE)) {
         _SQLiteUnlockNotification un = new _SQLiteDatabaseUnlockNotification(handle);
         do {
           // prepare indicated a locked state, so attempt to block and wait
@@ -653,8 +653,7 @@ public final class SQLiteConnection {
         SQLiteController controller = cached ? myCachedController : myUncachedController;
         if (fixedKey == null)
           fixedKey = sql.getFixedParts();
-        statement = new SQLiteStatement(controller, stmt, fixedKey, myProfiler);
-        statement.setBlocking(isBlocking);
+        statement = new SQLiteStatement(controller, stmt, fixedKey, myProfiler, myOpenFlags);
         myStatements.add(statement);
       } else {
         Internal.logWarn(this, "connection disposed while preparing statement for [" + sql + "]");
@@ -1821,29 +1820,27 @@ public final class SQLiteConnection {
    *
    * @see <a href="http://www.sqlite.org/unlock_notify.html">SQLite Unlock Notify API</a>
    */
-  public boolean isBlocking()
-  {
-    synchronized(myLock) {
+  public boolean isBlocking() {
+    synchronized (myLock) {
       return isBlocking;
     }
   }
   
   /**
-   * Set the blocking flag.
+   * Set the blocking flag. Blocking can only be enabled in shared cache mode.
    *
    * @param isBlocking A boolean that indicates if {@link
    * #prepare(SQLParts,boolean)} will try to block when in a locked state
    * and shared cache mode is enabled.
    *
+   * @throws SQLiteException If shared cache mode is not enabled for connection.
    * @see #isBlocking()
    */
-  public void setBlocking(boolean isBlocking)
-    throws SQLiteException
-  {
-    // blocking can only be enabled in shared cache mode
-    synchronized(myLock) {
-      if(isBlocking && (myOpenFlags & SQLITE_OPEN_SHAREDCACHE) == 0)
-        throw new SQLiteException(SQLiteConstants.WRAPPER_MISUSE, "Blocking can only be enabled in shared cache mode.  Shared cache mode is enabled with a flag passed to openV2().");
+  public void setBlocking(boolean isBlocking) throws SQLiteException {
+    synchronized (myLock) {
+      if (isBlocking && (myOpenFlags & SQLITE_OPEN_SHAREDCACHE) == 0)
+        throw new SQLiteException(SQLiteConstants.WRAPPER_MISUSE,
+                "Blocking can only be enabled in shared cache mode. Shared cache mode is enabled with a flag passed to openV2().");
       this.isBlocking = isBlocking;
     }
   }
