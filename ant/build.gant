@@ -93,7 +93,8 @@ target(name: 'init') {
     os = "windows"
   } else {
     def platform = antProp("platforms")
-    if (platform && platform.contains("linux-armv8")) {
+    def arch = antProp('os.arch')
+    if (platform && platform.contains("linux-armv8") && !(arch && arch.contains("aarch64"))) {
       os = "linux-armv8"
     } else {
       os = "linux"

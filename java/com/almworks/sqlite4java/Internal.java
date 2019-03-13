@@ -172,6 +172,8 @@ final class Internal {
         r.add(base + "-" + arch.substring(0, 5));
       }
       r.add(base + "-arm");
+    } else if (arch.equals("aarch64")) {
+      r.add(base + "-armv8");
     }
     r.add(base);
     r.add(BASE_LIBRARY_NAME);
