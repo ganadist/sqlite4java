@@ -490,8 +490,9 @@ target(name: 'collect') {
   osgi(mod, deliverDir, target)
 }
 
-final def ndkBuild = { String command ->
-  def target = "$build/android"
+final def ndkBuild = { String command, String arch ->
+  def target = "$build/$arch"
+  def platformArg = "ARCH_TYPE=$arch"
   ant.delete(dir: target)
   ant.mkdir(dir: target)
   def template = new File("$mod/ant/Android.mk.template")
@@ -500,10 +501,10 @@ final def ndkBuild = { String command ->
   ant.mkdir(dir: "$target/project/jni")
   ant.copy(file: "Android.mk.template", tofile: "$target/project/jni/Android.mk")
   ant.copy(file: "Application.mk.template", tofile: "$target/project/jni/Application.mk")
-  ant.exec(dir: "$target/project", command: "$command")
+  ant.exec(dir: "$target/project", command: "$command $platformArg")
 
   def libs = "$target/project/libs"
-  def nameTmp = "libsqlite4java-android"
+  def nameTmp = "libsqlite4java-$arch"
 
   def archTypes = [
           ["armeabi-v7a", "armv7l"],
@@ -518,14 +519,14 @@ final def ndkBuild = { String command ->
     def newFile = "$libs/$dir/${newName}"
     ant.move(file: oldFile, tofile: newFile)
   }
-  def androidDir = "$target/android"
+  def androidDir = "$target/$arch"
   ant.mkdir(dir: androidDir)
-  ant.copy(todir: "$target/android/libs") {
+  ant.copy(todir: "$target/$arch/libs") {
     fileset(dir: "$target/project/libs")
   }
-  def zipName = "$target/sqlite4java-android-${version}.zip"
+  def zipName = "$target/sqlite4java-$arch-${version}.zip"
   ant.zip(destfile: zipName,
-          basedir: "$target", includes: "android/**/*.*")
+          basedir: "$target", includes: "$arch/**/*.*")
   ant.copy(file: zipName, todir: "$build/dist")
   ant.delete(dir: androidDir)
   ant.delete(dir: "$target/project")
@@ -535,12 +536,12 @@ target(name: 'android') {
   depends(['init', 'lib.swig'])
   checkProp("ndk.home", "NDK_HOME")
   def ndkHome = antProp("ndk.home")
-  ndkBuild("$ndkHome/ndk-build")
+  ndkBuild("$ndkHome/ndk-build", "android")
 }
 
 target(name: 'android-snapdragon') {
   depends(['init', 'lib.swig'])
   checkProp("ndk.home", "NDK_HOME")
   def ndkHome = antProp("ndk.home")
-  ndkBuild("$ndkHome/ndk-build NDK_TOOLCHAIN_VERSION=snapdragonclang APP_CFLAGS='-O3 -mcpu=cortex-a57'")
+  ndkBuild("$ndkHome/ndk-build NDK_TOOLCHAIN_VERSION=snapdragonclang APP_CFLAGS='-O3 -mcpu=cortex-a57'", "android-snapdragon")
 }
