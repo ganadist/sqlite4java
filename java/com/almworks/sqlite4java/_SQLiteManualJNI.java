@@ -134,8 +134,8 @@ final class _SQLiteManualJNI {
 
   public final static native int sqlite3_win32_set_directory(int type, String zValue);
 
-  public final static native int sqlite3_statement_unlock_notify(long stmt, _SQLiteUnlockNotification un);
+  public final static native int sqlite3_statement_unlock_notify(long stmt, UnlockNotification un);
 
-  public final static native int sqlite3_db_unlock_notify(long db, _SQLiteUnlockNotification un);
+  public final static native int sqlite3_db_unlock_notify(long db, UnlockNotification un);
 
 }

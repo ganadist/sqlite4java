@@ -24,7 +24,7 @@ import java.util.*;
 import java.util.logging.Level;
 
 import static com.almworks.sqlite4java.SQLiteConstants.*;
-import static com.almworks.sqlite4java._SQLiteUnlockNotification.*;
+import static com.almworks.sqlite4java.UnlockNotification.*;
 
 /**
  * SQLiteConnection is a single connection to sqlite database. It wraps the <strong><code>sqlite3*</code></strong>
@@ -627,7 +627,7 @@ public final class SQLiteConnection {
       stmt = mySQLiteManual.sqlite3_prepare_v3(handle, sqlString, flags);
       int rc = mySQLiteManual.getLastReturnCode();
       if (blockingMode && (rc == SQLITE_LOCKED || rc == SQLITE_LOCKED_SHAREDCACHE)) {
-        _SQLiteUnlockNotification un = new _SQLiteDatabaseUnlockNotification(handle);
+        UnlockNotification un = new _SQLiteDatabaseUnlockNotification(handle);
         do {
           // prepare indicated a locked state, so attempt to block and wait
           // for notification of an unlock

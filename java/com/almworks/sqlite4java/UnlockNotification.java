@@ -25,20 +25,16 @@ import static com.almworks.sqlite4java.SQLiteConstants.*;
  *
  * @see <a href="http://www.sqlite.org/unlock_notify.html">SQLite Unlock Notification</a>
  */
-abstract class _SQLiteUnlockNotification {
+abstract class UnlockNotification {
   /**
    * Indicates whether an unlock notification has occured and the callback
    * has accepted the notification.
    */
-  public int fired;
-
-  public _SQLiteUnlockNotification() {
-    this.fired = 0;
-  }
+  volatile private boolean hasFired;
 
   /**
    * This callback is called by SQLite if this {@link
-   * _SQLiteUnlockNotification} object is the object that was registered
+   * UnlockNotification} object is the object that was registered
    * with the sqlite3_unlock_notify() call.
    *
    * It gets called when SQLite is ready to indicate when a lock is
@@ -46,8 +42,8 @@ abstract class _SQLiteUnlockNotification {
    */
   public void callback() {
     synchronized (this) {
-      fired = 1;
-      this.notify();
+      hasFired = true;
+      this.notifyAll();
     }
   }
   
@@ -70,7 +66,7 @@ abstract class _SQLiteUnlockNotification {
     assert(rc == SQLiteConstants.SQLITE_LOCKED || rc == SQLiteConstants.SQLITE_LOCKED_SHAREDCACHE || rc == SQLiteConstants.SQLITE_OK);
     if (rc == SQLITE_OK) {
       synchronized(this) {
-        if (fired == 0) {
+        while (!hasFired) {
           try {
             // wait for notification from the callback
             if (Internal.isFineLogging())
@@ -89,7 +85,7 @@ abstract class _SQLiteUnlockNotification {
   /**
    * Unlock notify implementation for {@link SQLiteConnection}.
    */
-  static class _SQLiteDatabaseUnlockNotification extends _SQLiteUnlockNotification {
+  static class _SQLiteDatabaseUnlockNotification extends UnlockNotification {
     SWIGTYPE_p_sqlite3 handle;
     
     protected _SQLiteDatabaseUnlockNotification(SWIGTYPE_p_sqlite3 handle) {
@@ -107,7 +103,7 @@ abstract class _SQLiteUnlockNotification {
   /**
    * Unlock notify implementation for {@link SQLiteStatement}.
    */
-  static class _SQLiteStatementUnlockNotification extends _SQLiteUnlockNotification {
+  static class _SQLiteStatementUnlockNotification extends UnlockNotification {
     SWIGTYPE_p_sqlite3_stmt handle;
     
     protected _SQLiteStatementUnlockNotification(SWIGTYPE_p_sqlite3_stmt handle) {

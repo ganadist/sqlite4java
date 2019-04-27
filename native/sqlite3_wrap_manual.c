@@ -972,7 +972,11 @@ static jint JNICALL com_almworks_sqlite4java_sqlite3_unlock_notify(JNIEnv *jenv,
 JNIEXPORT jint JNICALL Java_com_almworks_sqlite4java__1SQLiteManualJNI_sqlite3_1statement_1unlock_1notify(JNIEnv *jenv, jclass jcls,
   jlong jstmt, jobject un)
 {
+  sqlite3 *db = 0;
+
   if (!jstmt) return WRAPPER_INVALID_ARG_1;
+  db = sqlite3_db_handle(*(sqlite3_stmt**)&jstmt);
+  if (!db) return WRAPPER_INVALID_ARG_1;
   if (!un) return WRAPPER_INVALID_ARG_2;
   return com_almworks_sqlite4java_sqlite3_unlock_notify(
     jenv, jcls, sqlite3_db_handle(*(sqlite3_stmt**)&jstmt), un

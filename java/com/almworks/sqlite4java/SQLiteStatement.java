@@ -25,7 +25,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import static com.almworks.sqlite4java.SQLiteConstants.*;
-import static com.almworks.sqlite4java._SQLiteUnlockNotification.*;
+import static com.almworks.sqlite4java.UnlockNotification.*;
 
 /**
  * SQLiteStatement wraps an instance of compiled SQL statement, represented as <strong><code>sqlite3_stmt*</code></strong>
@@ -313,7 +313,7 @@ public final class SQLiteStatement {
       long from = profiler == null ? 0 : System.nanoTime();
       rc = _SQLiteSwigged.sqlite3_step(handle);
       if (isBlocking && (rc == SQLITE_LOCKED || rc == SQLITE_LOCKED_SHAREDCACHE)) {
-        _SQLiteUnlockNotification un = new _SQLiteStatementUnlockNotification(handle);
+        UnlockNotification un = new _SQLiteStatementUnlockNotification(handle);
         do {
           // step indicated a locked state, so attempt to block and wait for
           // notification of an unlock

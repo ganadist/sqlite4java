@@ -18,8 +18,6 @@ package com.almworks.sqlite4java;
 
 import java.nio.ByteBuffer;
 
-import com.almworks.sqlite4java.SQLiteColumnMetadata;
-
 final class _SQLiteManual {
   /**
    * These arrays are used for return values. SQLiteConnection facade must ensure the methods are called
@@ -262,11 +260,11 @@ final class _SQLiteManual {
     return r;
   }
 
-  public static int sqlite3_db_unlock_notify(SWIGTYPE_p_sqlite3 db, _SQLiteUnlockNotification un) {
+  public static int sqlite3_db_unlock_notify(SWIGTYPE_p_sqlite3 db, UnlockNotification un) {
     return _SQLiteManualJNI.sqlite3_db_unlock_notify(SWIGTYPE_p_sqlite3.getCPtr(db), un);
   }
 
-  public static int sqlite3_statement_unlock_notify(SWIGTYPE_p_sqlite3_stmt stmt, _SQLiteUnlockNotification un) {
+  public static int sqlite3_statement_unlock_notify(SWIGTYPE_p_sqlite3_stmt stmt, UnlockNotification un) {
     return _SQLiteManualJNI.sqlite3_statement_unlock_notify(SWIGTYPE_p_sqlite3_stmt.getCPtr(stmt), un);
   }
 }
