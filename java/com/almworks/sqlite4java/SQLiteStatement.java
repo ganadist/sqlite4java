@@ -128,8 +128,6 @@ public final class SQLiteStatement {
   /**
    * Flag indicating whether to use blocking step() (using the
    * sqlite3_notify_unlock feature).
-   *
-   * Protected by myLock
    */
   private boolean isBlocking;
 
@@ -1464,10 +1462,9 @@ public final class SQLiteStatement {
    *
    * @see SQLiteConnection#isBlocking()
    */
-  public boolean isBlocking() {
-    synchronized (this) {
-      return isBlocking;
-    }
+  public boolean isBlocking() throws SQLiteException {
+    myController.validate();
+    return isBlocking;
   }
   
   /**
@@ -1480,12 +1477,11 @@ public final class SQLiteStatement {
    * @see #isBlocking()
    */
   public void setBlocking(boolean isBlocking) throws SQLiteException {
-    synchronized (this) {
-      if (isBlocking && (myConnOpenFlags & SQLITE_OPEN_SHAREDCACHE) == 0)
-        throw new SQLiteException(SQLiteConstants.WRAPPER_MISUSE,
-                "Blocking can only be enabled in shared cache mode. Shared cache mode is enabled with a flag passed to openV2().");
-      this.isBlocking = isBlocking;
-    }
+    myController.validate();
+    if (isBlocking && (myConnOpenFlags & SQLITE_OPEN_SHAREDCACHE) == 0)
+      throw new SQLiteException(SQLiteConstants.WRAPPER_MISUSE,
+        "Blocking can only be enabled in shared cache mode. Shared cache mode is enabled with a flag passed to openV2().");
+    this.isBlocking = isBlocking;
   }
 
   private final class BindStream extends OutputStream {
