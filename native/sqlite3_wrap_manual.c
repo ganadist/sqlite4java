@@ -909,20 +909,34 @@ JNIEXPORT jint JNICALL Java_com_almworks_sqlite4java__1SQLiteManualJNI_sqlite3_1
 #endif
 }
 
+static JavaVM *cached_jvm = NULL;
 static jmethodID unlockNotificationCallbackID = NULL;
+
+JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM *jvm, void *reserved)
+{
+  cached_jvm = jvm;
+  JNIEnv *jenv;
+  if ((*jvm)->GetEnv(jvm, (void**)&jenv, JNI_VERSION_1_4)) {
+    return JNI_ERR; /* JNI version not supported */
+  }
+  return JNI_VERSION_1_4;
+}
 
 static void com_almworks_sqlite4java_unlock_notify_cb(void **apArg, int nArg)
 {
+  JNIEnv *jenv;
+  if (cached_jvm == NULL || (*cached_jvm)->GetEnv(cached_jvm, (void**)&jenv, JNI_VERSION_1_4)) {
+    return;
+  }
+
   int i;
   for(i = 0; i < nArg; i++) {
     void **args = (void **)apArg[i];
-    jobject un = (jobject)args[0];
-    JNIEnv *jenv = (JNIEnv*)args[1];
+    jobject un = (jobject)apArg[i];
 
     /* un object can't be null */
     if (un == NULL) {
       (*jenv)->DeleteGlobalRef(jenv, un);
-      sqlite3_free(args);
       return;
     }
 
@@ -931,14 +945,12 @@ static void com_almworks_sqlite4java_unlock_notify_cb(void **apArg, int nArg)
       jclass unlockNotifCls = (*jenv)->GetObjectClass(jenv, un);
       if (unlockNotifCls == NULL) {
         (*jenv)->DeleteGlobalRef(jenv, un);
-        sqlite3_free(args);
         return;
       }
       unlockNotificationCallbackID = (*jenv)->GetMethodID(jenv, unlockNotifCls, "callback", "()V");
       (*jenv)->DeleteLocalRef(jenv, unlockNotifCls);
       if (unlockNotificationCallbackID == NULL) {
         (*jenv)->DeleteGlobalRef(jenv, un);
-        sqlite3_free(args);
         return;
       }
     }
@@ -948,8 +960,6 @@ static void com_almworks_sqlite4java_unlock_notify_cb(void **apArg, int nArg)
 
     /* delete the global ref that was created when the callback was registered */
     (*jenv)->DeleteGlobalRef(jenv, un);
-
-    sqlite3_free(args);
   }
 }
 
@@ -961,12 +971,8 @@ static jint JNICALL com_almworks_sqlite4java_sqlite3_unlock_notify(JNIEnv *jenv,
    *  later.  The callback is responsible for destroying the global ref.
    */
   jobject unGlobalRef = (*jenv)->NewGlobalRef(jenv, un);
-  void **args = (void**)sqlite3_malloc(2 * sizeof(void*));
-  if (!args) return WRAPPER_OUT_OF_MEMORY;
-  args[0] = (void*)unGlobalRef;
-  args[1] = (void*)jenv;
   if (unGlobalRef == NULL) return WRAPPER_WEIRD;
-  return sqlite3_unlock_notify(db, com_almworks_sqlite4java_unlock_notify_cb, (void*)args);
+  return sqlite3_unlock_notify(db, com_almworks_sqlite4java_unlock_notify_cb, (void*)unGlobalRef);
 }
 
 JNIEXPORT jint JNICALL Java_com_almworks_sqlite4java__1SQLiteManualJNI_sqlite3_1statement_1unlock_1notify(JNIEnv *jenv, jclass jcls,
