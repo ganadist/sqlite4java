@@ -1,8 +1,9 @@
 VERSION := 1.0.392
 GROUP_ID := io.github.ganadist.sqlite4java
-ARTIFACT_ID := libsqlite4java-osx-arm64
+ARTIFACT_ID := libsqlite4java-osx-aarch64
 LOCAL_URL := file://$(HOME)/.m2/repository
-POMFILE := libsqlite4java-osx-arm64.pom
+URL := https://s01.oss.sonatype.org/service/local/staging/deploy/maven2/
+POMFILE := libsqlite4java-osx-aarch64.pom
 
 
 CFLAGS := -O2 -fPIC
@@ -43,9 +44,13 @@ ifeq ($(HARDWARE),x86_64)
 	ARCH := amd64
 else
 	ifeq ($(HARDWARE),arm64)
-		ARCH := arm64
+		ARCH := aarch64
 	endif
 endif
+
+#OS := osx
+#ARCH := aarch64
+#SHARED_LIB_EXT := dylib
 
 PLATFORM := $(OS)-$(ARCH)
 OUT_DIR := out/$(PLATFORM)
@@ -75,15 +80,27 @@ $(OUT_DIR)/intarray.o: native/intarray.c
 clean:
 	rm -rf $(OUT_DIR)
 
-install: libsqlite4java-osx-arm64-$(VERSION).dylib
+OSX_OS_ARCH := osx-aarch64
+OSX_LIB_EXT := dylib
+
+install: libsqlite4java-${OSX_OS_ARCH}-$(VERSION).${OSX_LIB_EXT}
 	mvn deploy:deploy-file \
 		-Dsonar.skip=true \
 		-DgeneratePom=false \
 		-DgroupId=$(GROUP_ID) \
 		-DartifactId=$(ARTIFACT_ID) \
 		-Dversion=$(VERSION) \
-		-Dpackaging=$(SHARED_LIB_EXT) \
+		-Dpackaging=$(OSX_LIB_EXT) \
 		-Durl=$(LOCAL_URL) \
-		-Dfile=$@ \
+		-Dfile=$< \
+		-DpomFile=$(POMFILE)
+
+upload: libsqlite4java-${OSX_OS_ARCH}-$(VERSION).${OSX_LIB_EXT}
+	mvn gpg:sign-and-deploy-file \
+		-DgeneratePom=false \
+		-DrepositoryId=ossrh \
+		-Dpackaging=$(OSX_LIB_EXT) \
+		-Durl=$(URL) \
+		-Dfile=$< \
 		-DpomFile=$(POMFILE)
 
